@@ -10,7 +10,7 @@ class Visualize:
         self.world = world
         
         self.cell_h, self.cell_w = self.get_cell_size()
-        self.agent_h, self.agent_w = self.get_agent_size(1)
+        self.agent_h, self.agent_w = self.get_agent_size()
         self.vis_cells = np.zeros_like(self.world.maze, dtype = int)
 
         # Register Visualize module to maze world
@@ -27,7 +27,7 @@ class Visualize:
                 if self.world.maze[row][col] == OBSTACLES:
                     self.canvas.itemconfig(self.vis_cells[row][col], fill='gray', width=2)
 
-    def draw_agents(self, agent_id):
+    def draw_agent(self, agent_id):
         agent_obj = self.world.agent_dict[agent_id]
         start_x, start_y= agent_obj.start_x, agent_obj.start_y
         goal_x, goal_y = agent_obj.goal_x, agent_obj.goal_y
@@ -53,7 +53,7 @@ class Visualize:
         cell_w = avail_w / ncols
         return (cell_h, cell_w)
 
-    def get_agent_size(self, nagents):
+    def get_agent_size(self):
         '''
         Calculate agent size when rendering the maze
         '''
