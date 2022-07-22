@@ -10,7 +10,7 @@ class Visualize:
         self.world = world
         
         self.cell_h, self.cell_w = self.get_cell_size()
-        self.agent_h, self.agent_w = self.get_agent_size(1)
+        self.agent_h, self.agent_w = self.get_agent_size()
         self.vis_cells = np.zeros_like(self.world.maze, dtype = int)
 
         # Register Visualize module to maze world
@@ -18,6 +18,7 @@ class Visualize:
 
         # Keep track of agent visualiztion object [agent_id : agent visualization object]
         self.agent_obj_dict = dict()
+        self.agent_obj_num_dict = dict()
 
     def draw_world(self):
         nrows, ncols = self.world.maze.shape
@@ -27,7 +28,7 @@ class Visualize:
                 if self.world.maze[row][col] == OBSTACLES:
                     self.canvas.itemconfig(self.vis_cells[row][col], fill='gray', width=2)
 
-    def draw_agents(self, agent_id):
+    def draw_agent(self, agent_id):
         agent_obj = self.world.agent_dict[agent_id]
         start_x, start_y= agent_obj.start_x, agent_obj.start_y
         goal_x, goal_y = agent_obj.goal_x, agent_obj.goal_y
@@ -36,12 +37,12 @@ class Visualize:
             y1, x1, y2, x2 = self.get_agent_pos_in_maze(start_y,start_x)
 
             # Add agent cell to aindx_obj for tracking later
-            self.agent_obj_dict[agent_id] = self.canvas.create_oval(x1, y1, x2, y2, fill=COLORS[cell])
-
+            self.agent_obj_dict[agent_id] = self.canvas.create_oval(x1, y1, x2, y2, fill=agent_obj.color)
+            self.agent_obj_num_dict[agent_id] = self.canvas.create_text(x1+self.agent_w/2,y1+self.agent_h/2,text=str(agent_id))
             # Find the corresponding goal and color it
             goal_cell = self.vis_cells[goal_y, goal_x]
-            self.canvas.itemconfig(goal_cell, outline=COLORS[cell], width=4)
-
+            self.canvas.itemconfig(goal_cell, outline=agent_obj.color, width=4)
+            
 
     # region Helper function
 
@@ -53,7 +54,7 @@ class Visualize:
         cell_w = avail_w / ncols
         return (cell_h, cell_w)
 
-    def get_agent_size(self, nagents):
+    def get_agent_size(self):
         '''
         Calculate agent size when rendering the maze
         '''
@@ -87,6 +88,6 @@ class Visualize:
         current_y, current_x = agent_obj.current_y, agent_obj.current_x
         y1, x1, y2, x2 = self.get_pos_in_cell(current_y, current_x)
         self.canvas.coords(self.agent_obj_dict[agent_id], x1, y1, x2, y2)
-    
+        self.canvas.coords(self.agent_obj_num_dict[agent_id], (x1+self.agent_w/2), (y1+self.agent_h/2))
     
     # endregion Helper function

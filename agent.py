@@ -2,7 +2,6 @@ from abstract_classes import BaseAgent
 import numpy as np
 import cv2
 import random
-import itertools
 from globalParams import *
 
 class AstarAgent(BaseAgent):
@@ -15,7 +14,7 @@ class AstarAgent(BaseAgent):
             self.world = agent_info.get("world")
             maze = self.world.maze
             agent_id = agent_info.get("agent_id")
-            self.start_x, self.start_y, self.goal_x, self.goal_y = self.init_valid_start_goal_pos(maze, agent_id)
+            self.start_x, self.start_y, self.goal_x, self.goal_y = self.init_valid_start_goal_pos(self.world, agent_id)
         else:
             self.start_x = agent_info.get("start_x")
             self.start_y = agent_info.get("start_y")
@@ -25,6 +24,9 @@ class AstarAgent(BaseAgent):
         # Register agent to world
         self.world.agent_dict[agent_id] = self
 
+        # Assign a random color to agent for visualize
+        r = lambda: random.randint(0,255)
+        self.color = '#{:02x}{:02x}{:02x}'.format(r(), r(), r())
 
     def agent_start(self, state):
         pass
@@ -45,42 +47,23 @@ class AstarAgent(BaseAgent):
 
     #region Helper functions
 
-    def init_valid_start_goal_pos(self, maze, agent_id):
-
-        self.size_load_map = np.shape(maze)
-
-        # use flood-fill to ensure the connectivity of node in maze
-        #map_env = self.img_fill(maze.astype(np.uint8), 0.5)
-        map_env = maze
-
-        array_freespace = np.argwhere(map_env == 0)
-        num_freespace = array_freespace.shape[0]
-        array_obstacle = np.transpose(np.nonzero(map_env))
-        num_obstacle = array_obstacle.shape[0]
-
-
-        print("###### Map Size: [{},{}] - #Obstacle: {}".format(self.size_load_map[0], self.size_load_map[1],
-                                                                num_obstacle))
-
-        list_freespace = []
-        list_obstacle = []
-
-        # transfer into list (tuple)
-        for id_FS in range(num_freespace):
-            list_freespace.append((array_freespace[id_FS, 0], array_freespace[id_FS, 1]))
-
-        for id_Obs in range(num_obstacle):
-            list_obstacle.append((array_obstacle[id_Obs, 0], array_obstacle[id_Obs, 1]))
-
-        start_yx, goal_yx = random.sample(list_freespace, 2)
+    def init_valid_start_goal_pos(self, world, agent_id):
+        list_freespace = world.freespace
+        num_of_freespaces = len(list_freespace)
+        start_idx, goal_idx = random.sample(range(num_of_freespaces), 2)
+        start_yx, goal_yx = list_freespace[start_idx], list_freespace[goal_idx]
+        world.update_freespace([start_idx, goal_idx])    
+        #start_yx, goal_yx = random.sample(list_freespace, 2)
         start_y,start_x = start_yx
         goal_y, goal_x = goal_yx
         
         # Update maze with start_x, start_y occuiped
-        maze[start_y, start_x] = agent_id
+        world.maze[start_y, start_x] = agent_id
 
         # Set initial position as current position
         self.current_x, self.current_y = start_x, start_y
+
+        self.reach_goal = False
 
         return start_x, start_y, goal_x, goal_y
 
