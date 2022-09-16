@@ -11,8 +11,8 @@ class RandomMaze(BaseEnvironment):
         complexity = env_info.get("maze_complexity", 0.01)
         density = env_info.get("density", 0.1)
         maze_type = env_info.get("map_type", "maze")
-        path_size = env_info.get("path_size", 2)
-        central_path_size = env_info.get("central_path_size", 2)
+        path_size = env_info.get("path_size", 1)
+        central_path_size = env_info.get("central_path_size", 1)
 
         self.maze = self._mapGen(self.w, self.h, complexity, density, maze_type, path_size, central_path_size)
 
@@ -21,6 +21,14 @@ class RandomMaze(BaseEnvironment):
 
         # Define agent dictionary -> {agent_id: agent obj}
         self.agent_dict = dict()
+
+        # Define lock map to maintain the zone lock for each agent
+        self.init_zoneLock()
+        self.lookAheadDistance = 3
+
+        # Define deadend List
+        self.deadEndLs = []
+
 
         # Define visualize parameter for registering in visualize module
         self.visualize = None
@@ -38,17 +46,16 @@ class RandomMaze(BaseEnvironment):
             raise Exception('Agent id: ' + str(agent_id) + ' does not exist!')
 
         # Remember original location before doing anything
-        original_y, original_x = current_y, current_x
-        
-        #update neighbors status
-        #nbors = self.check_nbors(current_y, current_x)
-
-        #if(nbors[action] == FREE_SPACE):
+        prev_y, prev_x = current_y, current_x
         current_y += int(action == Actions.DOWN) - int(action == Actions.UP)
         current_x += int(action == Actions.RIGHT) - int(action == Actions.LEFT)
         agent_obj.current_y, agent_obj.current_x = current_y, current_x
-        self.maze[original_y, original_x] = 0
+        agent_obj.prev_y, agent_obj.prev_x = prev_y, prev_x
+
+        # Mark original node to Free space
+        self.maze[prev_y, prev_x] = FREE_SPACE
         self.maze[current_y, current_x] = agent_id
+
         # Check if maze world is registered to visualize module
         if(self.visualize): 
             self.visualize.update_agent_pos_in_maze(agent_id)
@@ -102,7 +109,7 @@ class RandomMaze(BaseEnvironment):
         elif map_type == 'warehouse':
             # Build actual maze
             maze = np.ones(world_size, dtype=np.int64)
-            if path_size == 0: # no regulatoin on path size
+            if path_size == 0: # no regulation on path size
                 maze[0] = 0
                 maze[width-1] = 0
                 maze[:, 0] = 0
@@ -171,21 +178,33 @@ class RandomMaze(BaseEnvironment):
 
                 maze *= OBSTACLES
                 return maze
-
+        elif map_type == 'self_defined':
+            maze = np.zeros(world_size, dtype=np.int64)
+            maze[1:14,1:5] = OBSTACLES
+            maze[5:10,5:6] = OBSTACLES
+            maze[1:14,6:7] = OBSTACLES
+            maze[5:10,7:8] = OBSTACLES
+            maze[1:14,8:9] = OBSTACLES
+            maze[1:11,9:20] = OBSTACLES
+            maze[11:14,9:17] = OBSTACLES
+            maze[11:14,18:19] = OBSTACLES
+            maze[:,13:14] = 0
+            #maze[0,12] = OBSTACLES
+            return maze
 
     # region Helper functions
 
     def is_blocked(self, y, x):
-        if not self.is_outbound(y, x): return True
+        if self.is_outbound(y, x): return True
         if(self.maze[y, x] == OBSTACLES): return True
         return False
     
     def is_outbound(self, y, x):
         # Check if query position is out bound
         if x < 0 or x > self.w - 1 or y < 0 or y > self.h - 1:
-            return False
-        else:
             return True
+        else:
+            return False
 
     def check_nbors(self, y, x):
         '''
@@ -234,14 +253,10 @@ class RandomMaze(BaseEnvironment):
         num_freespace = array_freespace.shape[0]
         array_obstacle = np.transpose(np.nonzero(map_env))
         num_obstacle = array_obstacle.shape[0]
-
-
         print("###### Map Size: [{},{}] - #Obstacle: {}".format(self.size_load_map[0], self.size_load_map[1],
                                                                 num_obstacle))
-
         list_freespace = []
         list_obstacle = []
-
         # transfer into list (tuple)
         for id_FS in range(num_freespace):
             list_freespace.append((array_freespace[id_FS, 0], array_freespace[id_FS, 1]))
@@ -256,3 +271,198 @@ class RandomMaze(BaseEnvironment):
             del self.freespace[element]
 
     # endregion Helper functions
+
+
+    # region zoneLock functions
+    def init_zoneLock(self):
+        self.zoneLock = self.maze.copy()
+
+    def isPermissionGranted(self, plan_action, agent_obj):
+        """
+        Check if plan action should be granted permission
+        True: permission granted
+        false: permission denied
+        """
+
+        cy, cx = agent_obj.current_y, agent_obj.current_x
+        py, px = agent_obj.prev_y, agent_obj.prev_x
+
+        # Check whether current location belongs to deadLockSet
+        if ((py,px), (cy,cx)) in self.deadEndSetDict.keys():
+            deadEndLs = self.deadEndSetDict[((py,px), (cy,cx))]
+            for node in deadEndLs:
+                y, x = node
+                if self.zoneLock[y, x] != agent_obj.agent_id and self.zoneLock[y, x] != FREE_SPACE:
+                    return False
+
+        # Look ahead based on the action direction
+        for i in range(1, 2):
+            if plan_action == Actions.RIGHT and not self.is_blocked(cy, cx+i):
+                if self.zoneLock[cy, cx+i] != agent_obj.agent_id and self.zoneLock[cy, cx+i] != FREE_SPACE:
+                    return False
+            if plan_action == Actions.LEFT and not self.is_blocked(cy, cx-i):
+                if self.zoneLock[cy, cx-i] != agent_obj.agent_id and self.zoneLock[cy, cx-i] != FREE_SPACE:
+                    return False
+            if plan_action == Actions.UP and not self.is_blocked(cy-i, cx):
+                if self.zoneLock[cy-i, cx] != agent_obj.agent_id and self.zoneLock[cy-i, cx] != FREE_SPACE:
+                    return False
+            if plan_action == Actions.DOWN and not self.is_blocked(cy+i, cx):
+                if self.zoneLock[cy+i, cx] != agent_obj.agent_id and self.zoneLock[cy+i, cx] != FREE_SPACE:
+                    return False
+
+        nbors = self.check_nbors(agent_obj.current_y, agent_obj.current_x)
+        if(nbors[plan_action] != FREE_SPACE):
+            return False
+
+        return True
+
+    def applyZoneLock(self, agent_obj, action):
+        """Based on agent action, apply zone lock to relevant area"""
+        cy, cx = agent_obj.current_y, agent_obj.current_x
+        py, px = agent_obj.prev_y, agent_obj.prev_x
+
+        # Permission granted, lock all node in deadEndLs
+        if ((py,px), (cy,cx)) in self.deadEndSetDict.keys() and agent_obj.missionType == MissionType.PICKUP:
+            deadEndLs = self.deadEndSetDict[((py,px), (cy,cx))]
+            for node in deadEndLs:
+                y, x = node
+                if self.zoneLock[y,x] == FREE_SPACE:
+                    self.zoneLock[y,x] = agent_obj.agent_id
+
+        # Permission granted, Look ahead and lock zone
+        # for i in range(1, self.lookAheadDistance+1):
+        #     if action == Actions.RIGHT and not self.is_blocked(cy, cx+i):
+                
+        #         if agent_obj.zoneLockQueue.full():
+        #             firstLock = agent_obj.zoneLockQueue.get()
+        #             y, x = firstLock
+        #             self.zoneLock[y,x] = FREE_SPACE
+        #         self.zoneLock[cy, cx+i] = agent_obj.agent_id
+        #         if (cy, cx+i) not in agent_obj.zoneLockQueue.queue:                   
+        #             agent_obj.zoneLockQueue.put((cy, cx+i))
+
+        #     elif action == Actions.LEFT and not self.is_blocked(cy, cx-i):
+                
+        #         if agent_obj.zoneLockQueue.full():
+        #             firstLock = agent_obj.zoneLockQueue.get()
+        #             y, x = firstLock
+        #             self.zoneLock[y,x] = FREE_SPACE
+
+        #         self.zoneLock[cy, cx-i] = agent_obj.agent_id
+        #         if (cy, cx-i) not in agent_obj.zoneLockQueue.queue:
+        #             agent_obj.zoneLockQueue.put((cy, cx-i))
+
+        #     elif action == Actions.UP and not self.is_blocked(cy-i, cx):
+                
+        #         if agent_obj.zoneLockQueue.full():
+        #             firstLock = agent_obj.zoneLockQueue.get()
+        #             y, x = firstLock
+        #             self.zoneLock[y,x] = FREE_SPACE
+
+        #         self.zoneLock[cy-i, cx] = agent_obj.agent_id
+        #         if (cy-i, cx) not in agent_obj.zoneLockQueue.queue:
+        #             agent_obj.zoneLockQueue.put((cy-i, cx))
+
+        #     elif action == Actions.DOWN and not self.is_blocked(cy+i, cx):
+                
+        #         if agent_obj.zoneLockQueue.full():
+        #             firstLock = agent_obj.zoneLockQueue.get()
+        #             y, x = firstLock
+        #             self.zoneLock[y,x] = FREE_SPACE
+
+        #         self.zoneLock[cy+i, cx] = agent_obj.agent_id
+        #         if (cy+i, cx) not in agent_obj.zoneLockQueue.queue:
+        #             agent_obj.zoneLockQueue.put((cy+i, cx))
+        
+
+    def releaseZoneLock(self, agent_obj):
+        """Release relevant zone lock after agent had taken an action"""
+        cy, cx = agent_obj.current_y, agent_obj.current_x
+        py, px = agent_obj.prev_y, agent_obj.prev_x
+
+        # Permission granted, lock all node in deadEndLs
+        if ((py,px), (cy,cx)) in self.releaseDeadEndSetDict.keys():
+            deadEndLs = self.releaseDeadEndSetDict[((py,px), (cy,cx))]
+            for node in deadEndLs:
+                y, x = node
+                self.zoneLock[y,x] = FREE_SPACE
+
+
+    def clearZoneLock(self, agent_obj):
+        # clearoriginal lock zone
+        zonelock = zip(*np.where(self.zoneLock==agent_obj.agent_id))
+        for y, x in zonelock:
+            self.zoneLock[y,x] = FREE_SPACE
+    
+
+
+    # endregion zoneLock functions
+
+
+    # region map analysis functions
+    def locateDeadEnd(self):
+        """
+        Locate deadend location in map
+        """
+        for y in range(self.h):
+            for x in range(self.w):
+                if self.maze[y,x] != OBSTACLES:
+                    count = self.connectedEdgeCount(y,x)
+                    if count == 1: 
+                        #print(f"Position {y,x} is deadend!")
+                        self.deadEndLs.append((y,x))
+    
+    def connectedEdgeCount(self, y, x):
+        """
+        Count the number of connected edges
+        """
+        count = 0
+        # Check whether neigbor is blocked
+        if not self.is_blocked(y,x-1):
+            count += 1
+        if not self.is_blocked(y-1,x):
+            count += 1
+        if not self.is_blocked(y+1,x):
+            count += 1
+        if not self.is_blocked(y,x+1):
+            count += 1
+        return count
+
+    def deadEndLockSet(self):
+        """Construct the node lock set for each deadend"""
+        self.deadEndSetDict = dict()
+        self.releaseDeadEndSetDict = dict()
+        for deadEnd in self.deadEndLs:
+            deadEndLs = list()
+
+            next_node = deadEnd
+            previous_node = None
+
+            while next_node != None:
+                y, x = next_node
+                deadEndLs.append(next_node)
+                if self.connectedEdgeCount(y,x) > 2:
+                    self.deadEndSetDict[(next_node, previous_node)] = deadEndLs
+                    self.releaseDeadEndSetDict[(previous_node, next_node)] = deadEndLs
+                    break
+                if not self.is_blocked(y,x-1) and (y,x-1) not in deadEndLs:
+                    previous_node = next_node
+                    next_node = (y, x-1)
+                elif not self.is_blocked(y-1,x) and (y-1,x) not in deadEndLs:
+                    previous_node = next_node
+                    next_node = (y-1, x)
+                elif not self.is_blocked(y+1,x) and (y+1,x) not in deadEndLs:
+                    previous_node = next_node
+                    next_node = (y+1, x)
+                elif not self.is_blocked(y,x+1) and (y,x+1) not in deadEndLs:
+                    previous_node = next_node
+                    next_node = (y, x+1)
+                else:
+                    next_node = None
+        from pprint import pprint
+        print("DeadEndSetDict:")
+        pprint(self.deadEndSetDict)
+        print("ReleaseDeadEndSetDict:")
+        pprint(self.releaseDeadEndSetDict)
+        print('')
+    # endregion map analysis functions

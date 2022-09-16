@@ -10,11 +10,7 @@ import numpy as np
 if __name__ == "__main__":
     # Initialize environment
     env = RandomMaze()
-    env.env_init({"maze_w":50, "maze_h":50, "maze_complexity":0.01, "density": 0.5, "map_type": "warehouse"})
-
-    # Save grid only world for CBS algorithm
-    grid_only_maze = env.maze.copy()
-    #print(grid_only_maze)
+    env.env_init({"maze_w":20, "maze_h":15, "maze_complexity":0.01, "density": 0.5, "map_type": "self_defined"})
 
     # Visualize maze
     vis = Visualize(env)
@@ -23,16 +19,16 @@ if __name__ == "__main__":
     # Initialize agent
     starts = []
     goals = []
-    for agent_id in range(1,20):
+
+    for agent_id in range(1,3):
         agent = AstarAgent()
-        agent.agent_init({"mode": "simulation", "world": env, "agent_id": agent_id})
+        agent.agent_init({"mode": "self_defined", "world": env, "agent_id": agent_id})
         print("Agent start position: ", (agent.start_y,agent.start_x))
         print("Agent goal position: ", (agent.goal_y, agent.goal_x))
-        starts.append((agent.start_y,agent.start_x))
+        starts.append((agent.start_y, agent.start_x))
         goals.append((agent.goal_y, agent.goal_x))
         # Visualize agents
         vis.draw_agent(agent_id)
-    #print(env.maze)
 
     # Render initial condition
     vis.canvas.pack()
@@ -73,7 +69,6 @@ if __name__ == "__main__":
                         path_seq = path_seq[1:]
                         full_path_length = full_path_length - 1
                         # Update agent curr plan path if it is longer than existing plan path
-                        #if full_path_length > path_dict[agent_id]["curr_path_len"]:
                         path_dict[agent_id]["curr_path_len"] = full_path_length
                         path_dict[agent_id]["curr_path_seq"] = path_seq
 
